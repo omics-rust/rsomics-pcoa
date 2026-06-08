@@ -204,3 +204,59 @@ fn matches_skbio_braycurtis_dm() {
 fn matches_skbio_euclidean_dm() {
     differential("euclidean_dm.tsv");
 }
+
+/// Diff ours against a committed scikit-bio output (same format the oracle
+/// emits). Runs in CI without scikit-bio, so the value-level match is always
+/// checked, not just when the oracle is importable.
+fn differential_golden(table: &str, oracle_golden: &str) {
+    let ours = parse_ours(&ours_output(table));
+    let theirs = parse_oracle(&std::fs::read_to_string(golden(oracle_golden)).unwrap());
+
+    assert_eq!(
+        ours.eigvals.len(),
+        theirs.eigvals.len(),
+        "axis count differs"
+    );
+    for (a, &o) in ours.eigvals.iter().enumerate() {
+        assert!(
+            approx(o, theirs.eigvals[a]),
+            "{table} eigval PC{} {o} vs {}",
+            a + 1,
+            theirs.eigvals[a]
+        );
+    }
+    for (a, &o) in ours.proportion.iter().enumerate() {
+        assert!(
+            approx(o, theirs.proportion[a]),
+            "{table} proportion PC{} {o} vs {}",
+            a + 1,
+            theirs.proportion[a]
+        );
+    }
+
+    let n_axes = ours.eigvals.len();
+    let ids: Vec<&String> = ours.coords.keys().collect();
+    for a in 0..n_axes {
+        let sign_ours = axis_sign(&ours.coords, &ids, a);
+        let sign_theirs = axis_sign(&theirs.coords, &ids, a);
+        for id in &ids {
+            let o = ours.coords[*id][a] * sign_ours;
+            let t = theirs.coords[*id][a] * sign_theirs;
+            assert!(
+                approx(o, t),
+                "{table} coord {id} PC{} {o} vs {t} (sign-aligned)",
+                a + 1
+            );
+        }
+    }
+}
+
+#[test]
+fn matches_committed_skbio_braycurtis() {
+    differential_golden("braycurtis_dm.tsv", "braycurtis_pcoa.skbio.tsv");
+}
+
+#[test]
+fn matches_committed_skbio_euclidean() {
+    differential_golden("euclidean_dm.tsv", "euclidean_pcoa.skbio.tsv");
+}
